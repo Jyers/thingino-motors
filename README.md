@@ -61,11 +61,11 @@ Usage : ingenic-motor
          -s Speed step (default 900).
          -x X position/step (default 0).
          -y Y position/step (default 0).
-         -r reset to default pos.
+         -r two-phase homing (daemon-side), then return to center.
          -j return json string xpos,ypos,status,speed.
          -i return json string for all camera parameters
          -S show status
-```          
+```
 
 ## Examples
 
@@ -75,11 +75,11 @@ ingenic-motor -d h -x 1065 -y 800
 ```
 * go to position of begining of X and Y
 ```
-ingenic-motor -d h -x 0 -y 0 
+ingenic-motor -d h -x 0 -y 0
 ```
 * go to x 1065 and y 0
 ```
-ingenic-motor -d h -x 1992 -y 0 
+ingenic-motor -d h -x 1992 -y 0
 ```
 * get camera details as json string
 ```
@@ -89,7 +89,7 @@ ingenic-motor -i
 ```
 ingenic-motor -d s
 ```
-* reset the motors (to the center)
+* reset the motors (two-phase homing: half to one side, then full to the opposite; ends centered)
 ```
 ingenic-motor -r
 ```
