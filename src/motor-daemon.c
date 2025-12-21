@@ -352,6 +352,7 @@ static void load_config_file(void) {
 #define MOTOR_SPEED 0x5
 #define MOTOR_GOBACK 0x6
 #define MOTOR_CRUISE 0x7
+#define MOTOR_SPEED_AXIS 0x8
 
 #define PID_SIZE 32
 
@@ -415,6 +416,11 @@ struct motor_reset_data {
   unsigned int y_cur_step;
 };
 
+struct motor_axis_speed {
+  int x_speed;
+  int y_speed;
+};
+
 int motorfd = -1;
 struct request request_message; // object for IPC request from client
 int last_known_speed = 900;  // Default speed (overridden by config if present)
@@ -426,6 +432,31 @@ void motor_ioctl(int cmd, void *arg) {
   if (ret == -1) {
     syslog(LOG_ERR, "ioctl cmd 0x%x failed: %s", cmd, strerror(errno));
   }
+}
+
+static void compute_axis_speeds(int requested_speed, int *x_speed, int *y_speed) {
+  int xs = requested_speed;
+  int ys = requested_speed;
+
+  if (g_cfg.loaded) {
+    if (g_cfg.pan.speed > 0 && xs > g_cfg.pan.speed)
+      xs = g_cfg.pan.speed;
+    if (g_cfg.tilt.speed > 0 && ys > g_cfg.tilt.speed)
+      ys = g_cfg.tilt.speed;
+  }
+
+  if (x_speed)
+    *x_speed = xs;
+  if (y_speed)
+    *y_speed = ys;
+}
+
+static void motor_set_axis_speed(int x_speed, int y_speed) {
+  struct motor_axis_speed axis = {
+      .x_speed = x_speed,
+      .y_speed = y_speed,
+  };
+  motor_ioctl(MOTOR_SPEED_AXIS, &axis);
 }
 
 static int read_uint_sysfs(const char *path, unsigned int *out) {
@@ -485,22 +516,15 @@ void motor_steps(int xsteps, int ysteps, int stepspeed) {
   steps.y = (motor_inversion_state & MOTOR_INVERT_Y) ? -ysteps : ysteps;
 
   syslog(LOG_DEBUG, "Starting relative move");
-  int eff_speed = stepspeed;
-  if (g_cfg.loaded) {
-    int limit = 0;
-    if (g_cfg.pan.speed > 0 && g_cfg.tilt.speed > 0)
-      limit = (g_cfg.pan.speed < g_cfg.tilt.speed) ? g_cfg.pan.speed
-                                                   : g_cfg.tilt.speed;
-    else if (g_cfg.pan.speed > 0)
-      limit = g_cfg.pan.speed;
-    else if (g_cfg.tilt.speed > 0)
-      limit = g_cfg.tilt.speed;
-    if (limit > 0 && eff_speed > limit)
-      eff_speed = limit;
-  }
-  syslog(LOG_DEBUG, " -> steps, X %d, Y %d, speed %d\n", steps.x, steps.y,
-         eff_speed);
-  motor_ioctl(MOTOR_SPEED, &eff_speed);
+  int eff_speed_x = stepspeed;
+  int eff_speed_y = stepspeed;
+
+  compute_axis_speeds(stepspeed, &eff_speed_x, &eff_speed_y);
+
+  syslog(LOG_DEBUG, " -> steps, X %d (speed %d), Y %d (speed %d)\n",
+         steps.x, eff_speed_x, steps.y, eff_speed_y);
+
+  motor_set_axis_speed(eff_speed_x, eff_speed_y);
   motor_ioctl(MOTOR_MOVE, &steps);
   syslog(LOG_DEBUG, "Finished setting relative move");
 }
@@ -522,18 +546,6 @@ void motor_set_position(int xpos, int ypos, int stepspeed) {
 
   syslog(LOG_DEBUG, "Starting absolute move");
   int eff_speed = stepspeed;
-  if (g_cfg.loaded) {
-    int limit = 0;
-    if (g_cfg.pan.speed > 0 && g_cfg.tilt.speed > 0)
-      limit = (g_cfg.pan.speed < g_cfg.tilt.speed) ? g_cfg.pan.speed
-                                                   : g_cfg.tilt.speed;
-    else if (g_cfg.pan.speed > 0)
-      limit = g_cfg.pan.speed;
-    else if (g_cfg.tilt.speed > 0)
-      limit = g_cfg.tilt.speed;
-    if (limit > 0 && eff_speed > limit)
-      eff_speed = limit;
-  }
   syslog(LOG_DEBUG,
          " -> set position current X: %d, Y: %d, steps required X: %d, Y: %d, "
          "speed %d\n",
@@ -559,8 +571,8 @@ static int wait_until_idle(int timeout_ms, int poll_ms) {
 }
 
 // Perform two-phase homing using relative moves and busy polling
-// Phase 1: rotate halfway to one side; Phase 2: full way back to the opposite
-// side
+// Phase 1: rotate halfway to one side;
+// Phase 2: full way back to the opposite side
 static int enhanced_homing_daemon(int stepspeed) {
   struct motor_message status;
   motor_status_get(&status);
@@ -756,12 +768,9 @@ int main(int argc, char *argv[]) {
   load_config_file();
   if (g_cfg.loaded) {
     int cfg_speed = 0;
-    if (g_cfg.pan.speed > 0 && g_cfg.tilt.speed > 0)
-      cfg_speed = (g_cfg.pan.speed < g_cfg.tilt.speed) ? g_cfg.pan.speed
-                                                       : g_cfg.tilt.speed;
-    else if (g_cfg.pan.speed > 0)
+    if (g_cfg.pan.speed > 0)
       cfg_speed = g_cfg.pan.speed;
-    else if (g_cfg.tilt.speed > 0)
+    if (g_cfg.tilt.speed > 0 && g_cfg.tilt.speed > cfg_speed)
       cfg_speed = g_cfg.tilt.speed;
     if (cfg_speed > 0)
       last_known_speed = cfg_speed;
@@ -954,8 +963,8 @@ int main(int argc, char *argv[]) {
 
         break;
       case 's':                                   // set speed
-        last_known_speed = request_message.speed; // Don't limit the speed
-        motor_ioctl(MOTOR_SPEED, &last_known_speed);
+        last_known_speed = request_message.speed;
+        motor_set_axis_speed(last_known_speed, last_known_speed);
         syslog(LOG_DEBUG, "Set speed command, last known speed now %d",
                last_known_speed);
         break;
