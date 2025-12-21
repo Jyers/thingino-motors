@@ -93,3 +93,39 @@ ingenic-motor -d s
 ```
 ingenic-motor -r
 ```
+
+
+## JSON Configuration
+
+The daemon and client read an optional JSON config file at startup from the first existing path:
+- /etc/motors.json
+- ./motors.json (working directory)
+
+Configuration schema (per-axis parameters):
+
+```
+{
+  "loglevel": "INFO",            // optional: DEBUG or INFO
+  "pan": {                        // X axis
+    "max_steps": 2130,            // overrides driver-reported max (optional)
+    "home": 1065,                 // custom center position (optional)
+    "speed": 900,                 // default/maximum speed for X
+    "timeout": 10                 // seconds, used by homing waits
+  },
+  "tilt": {                       // Y axis
+    "max_steps": 1600,
+    "home": 800,
+    "speed": 900,                 // default/maximum speed for Y
+    "timeout": 10                 // seconds, used by homing waits
+  }
+}
+```
+
+Behavior:
+- If the file is missing or a field is absent, built-in defaults and driver values are used.
+- Homing uses configured max_steps and home (center) when provided; otherwise falls back to driver max and half-range center.
+- Homing timeouts use the max of the per-axis `timeout` (in seconds). If not set, defaults are 10s/15s/10s for phases 1/2/center.
+- Per-axis speed limits are enforced server-side: effective move speed is clamped to the most restrictive axis speed.
+- The client also reads the config and uses the per-axis speed to initialize its default speed. Command-line `-s` overrides the config.
+
+Example config lives well in /etc/motors.json.
