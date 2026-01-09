@@ -513,9 +513,13 @@ int motor_is_busy() {
 void motor_steps(int xsteps, int ysteps, int stepspeed) {
   struct motors_steps steps;
 
-  // Apply the correct inversion based on the motor_inversion_state
+  // Y-axis: default convention is zero at bottom, positive = move up
+  // Negate Y to match hardware, then apply user inversion flag
   steps.x = (motor_inversion_state & MOTOR_INVERT_X) ? -xsteps : xsteps;
-  steps.y = (motor_inversion_state & MOTOR_INVERT_Y) ? -ysteps : ysteps;
+  steps.y = -ysteps; // Negate for bottom-zero convention
+  if (motor_inversion_state & MOTOR_INVERT_Y) {
+    steps.y = -steps.y; // Apply inversion flag
+  }
 
   syslog(LOG_DEBUG, "Starting relative move");
   int eff_speed_x = stepspeed;
