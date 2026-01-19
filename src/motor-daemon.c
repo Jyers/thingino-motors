@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -8,7 +9,6 @@
 #include <string.h>
 #include <syslog.h>
 #include <unistd.h>
-#include <pthread.h>
 
 #include <json_config.h>
 #include <sys/ioctl.h>
@@ -436,7 +436,8 @@ void motor_ioctl(int cmd, void *arg) {
   }
 }
 
-static void compute_axis_speeds(int requested_speed, int *x_speed, int *y_speed) {
+static void compute_axis_speeds(int requested_speed, int *x_speed,
+                                int *y_speed) {
   int xs = requested_speed;
   int ys = requested_speed;
 
@@ -513,13 +514,9 @@ int motor_is_busy() {
 void motor_steps(int xsteps, int ysteps, int stepspeed) {
   struct motors_steps steps;
 
-  // Y-axis: default convention is zero at bottom, positive = move up
-  // Negate Y to match hardware, then apply user inversion flag
+  // Apply the correct inversion based on the motor_inversion_state
   steps.x = (motor_inversion_state & MOTOR_INVERT_X) ? -xsteps : xsteps;
-  steps.y = -ysteps; // Negate for bottom-zero convention
-  if (motor_inversion_state & MOTOR_INVERT_Y) {
-    steps.y = -steps.y; // Apply inversion flag
-  }
+  steps.y = (motor_inversion_state & MOTOR_INVERT_Y) ? -ysteps : ysteps;
 
   syslog(LOG_DEBUG, "Starting relative move");
   int eff_speed_x = stepspeed;
@@ -527,8 +524,8 @@ void motor_steps(int xsteps, int ysteps, int stepspeed) {
 
   compute_axis_speeds(stepspeed, &eff_speed_x, &eff_speed_y);
 
-  syslog(LOG_DEBUG, " -> steps, X %d (speed %d), Y %d (speed %d)\n",
-         steps.x, eff_speed_x, steps.y, eff_speed_y);
+  syslog(LOG_DEBUG, " -> steps, X %d (speed %d), Y %d (speed %d)\n", steps.x,
+         eff_speed_x, steps.y, eff_speed_y);
 
   motor_set_axis_speed(eff_speed_x, eff_speed_y);
   motor_ioctl(MOTOR_MOVE, &steps);
@@ -712,7 +709,9 @@ static void write_motion_active_flag() {
   }
 }
 
-static void remove_motion_active_flag() { unlink(MOTOR_ACTIVE_FLAG); }
+static void remove_motion_active_flag() {
+  unlink(MOTOR_ACTIVE_FLAG);
+}
 
 static void *motion_active_tracker(void *arg) {
   (void)arg;
@@ -1003,7 +1002,7 @@ int main(int argc, char *argv[]) {
         write(clientfd, &motor_message, sizeof(struct motor_message));
 
         break;
-      case 's':                                   // set speed
+      case 's': // set speed
         last_known_speed = request_message.speed;
         motor_set_axis_speed(last_known_speed, last_known_speed);
         syslog(LOG_DEBUG, "Set speed command, last known speed now %d",
