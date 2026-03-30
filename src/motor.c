@@ -413,9 +413,9 @@ int main(int argc, char *argv[]) {
   }
 
   // Ensure the final request uses the correct speed if supplied
-  if (request_message.speed_supplied) {
-    request_message.speed = stepspeed;
-  } else {
+  // Note: request_message.speed already contains the speed value from -s option
+  // or the config file value. If speed_supplied is true, use what's already set.
+  if (!request_message.speed_supplied) {
     request_message.speed = 0; // Indicate that speed is not set
   }
 
