@@ -1034,6 +1034,7 @@ int main(int argc, char *argv[]) {
       case 'S': // show status
         motor_status_get(&motor_message);
         motor_message.inversion_state = motor_inversion_state;
+        motor_message.speed = last_known_speed; // Update speed from daemon's setting
         write(clientfd, &motor_message, sizeof(struct motor_message));
         syslog(LOG_DEBUG, "Sent motor status");
         break;

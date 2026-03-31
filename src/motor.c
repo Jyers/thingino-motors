@@ -211,8 +211,8 @@ void print_request_message(struct request *req) {
 
 void initialize_request_message(struct request *req) {
   memset(req, 0, sizeof(struct request));
-  req->command = 'd'; // Default command
-  req->type = 's';    // Default type
+  req->command = '\0'; // No command by default
+  req->type = '\0';
   req->x = 0;
   req->got_x = 0;
   req->y = 0;
@@ -282,7 +282,6 @@ int main(int argc, char *argv[]) {
       request_message.speed = stepspeed;
       request_message.speed_supplied =
           true; // Set speed_supplied to true when speed is provided
-      request_message.command = 's';
       break;
     case 'x':
       request_message.x = atoi(optarg);
@@ -404,12 +403,18 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // If the command is speed only, send it and return
-  if (request_message.command == 's') {
+  // If speed was supplied but no other command was specified, send speed-only command
+  if (request_message.speed_supplied && request_message.command == '\0') {
+    request_message.command = 's';
     if (verbose)
       print_request_message(&request_message);
     write(serverfd, &request_message, sizeof(struct request));
     return 0;
+  }
+
+  // Set default command to 'd' if no command was specified
+  if (request_message.command == '\0') {
+    request_message.command = 'd';
   }
 
   // Ensure the final request uses the correct speed if supplied
